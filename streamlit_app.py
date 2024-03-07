@@ -17,7 +17,7 @@ st.set_page_config(page_title="Chatbot con PDF", layout="wide")
 st.markdown("""<style>.block-container {padding-top: 1rem;}</style>""", unsafe_allow_html=True)
 
 # Set OPENAI API KEY
-OPENAI_API_KEY = "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"
+OPENAI_API_KEY = "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"
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
 # Creando las llaves para el session_state
