@@ -1,30 +1,39 @@
 from PyPDF2 import PdfReader
 import os
-import spacy
-import streamlit as st
 
-# librerías para el procesamiento de lenguaje natural
+
+#liberias:
 from langchain.text_splitter import CharacterTextSplitter
 from langchain.embeddings.openai import OpenAIEmbeddings
 from langchain.vectorstores import FAISS
-from langchain.llms import OpenAI
+
+#Librerias para el textcontainer
+from langchain.llms import OpenAI 
 from langchain.chains.question_answering import load_qa_chain
 from langchain.callbacks import get_openai_callback
+
+#Librerias para el response_container
 from streamlit_chat import message
 
-# Configuración de Streamlit
+#Stream Lit
+import streamlit as st
+
+
+#Configuracion streamlit
+
 st.set_page_config(page_title="Chatbot con PDF", layout="wide")
 st.markdown("""<style>.block-container {padding-top: 1rem;}</style>""", unsafe_allow_html=True)
 
-# Set OPENAI API KEY
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
+#Set OPENAI API KEY
+OPENAI_API_KEY = "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"
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 
-# Creando las llaves para el session_state
-session_state = {
-    "responses": [],
-    "requests": []
-}
+##creando las llaves para la session_state
+
+session_state ={
+    "responses":[],
+    "requests":[]
+    }
 
 if 'responses' not in st.session_state:
     st.session_state['responses'] = ["Que onda Viejon, En que lo ayudo compa?"]
@@ -32,56 +41,70 @@ if 'responses' not in st.session_state:
 if 'requests' not in st.session_state:
     st.session_state['requests'] = []
 
-# Función para extraer texto del PDF
-def extract_text_from_pdf(pdf):
+
+
+def create_embeddings(pdf):
+    # Extrayendo texto del pdf
     if pdf is not None:
         pdf_reader = PdfReader(pdf)
         text = ""
         for page in pdf_reader.pages:
             text += page.extract_text()
-        return text
 
-# Interfaz de usuario de Streamlit
-st.sidebar.markdown("<h1 style ='text-align: center; color: #176887;'>Cargar Archivo PDF</h1>", unsafe_allow_html=True)
+        # Dividiendo en trozos el texto extraido del PDF
+        text_splitter = CharacterTextSplitter(
+            separator="\n",
+            chunk_size=10000,
+            chunk_overlap=200,
+            length_function=len
+        )
+        chunks = text_splitter.split_text(text)
+
+        embeddings = OpenAIEmbeddings()
+
+        embeddings_pdf = FAISS.from_texts(chunks, embeddings)
+
+        return embeddings_pdf
+
+
+#cargar el documento en el sidebar
+st.sidebar.markdown("<h1 style ='text-align: center; color: #176887;'>Cargar Archivo PDF</h1>", unsafe_allow_html = True)
 st.sidebar.write("Por favor, carga el archivo PDF con el cual quieres interactuar")
 pdf_doc = st.sidebar.file_uploader("", type="pdf")
 st.sidebar.write("---")
 clear_button = st.sidebar.button("Limpiar Conversación", key="clear")
+    
+#create embeddings
+embeddings_pdf = create_embeddings(pdf_doc)
 
-# Crear embeddings solo si pdf_doc está definido
-if pdf_doc is not None:
-    pdf_text = extract_text_from_pdf(pdf_doc)
-    text_splitter = CharacterTextSplitter(separator="\n", chunk_size=10000, chunk_overlap=200, length_function=len)
-    chunks = text_splitter.split_text(pdf_text)
-    embeddings = OpenAIEmbeddings()
-    embeddings_pdf = FAISS.from_texts(chunks, embeddings)
 
-    # Analizar el texto con spaCy para identificar entidades clave
-    spacy.cli.download("es_core_news_sm")
-    nlp = spacy.load("es_core_news_sm")
-    doc = nlp(pdf_text)
+#CHAT SECTION 
 
-    items_to_quote = []
-    for ent in doc.ents:
-        if ent.label_ == "PRODUCTO":  # Ajusta esto según tus necesidades
-            items_to_quote.append(ent.text)
-
-# CHAT SECTION
-st.markdown("<h2 style='text-align: center; color: #176B87; text-decoration: underline;' ><strong>Interactua con Kelvinator 2000 sobre tu documento</strong></h2>", unsafe_allow_html=True)
+st.markdown("<h2 style='text-align: center; color: #176B87; text-decoration: underline;' ><strong>Interactua con Kelvinator 2000 sobre tu docuento</strong></h2>", unsafe_allow_html=True)
 st.write("---")
+# container del chat history
 response_container = st.container()
+# container del text box
 textcontainer = st.container()
 
+## Creando el campo para el ingreso de la pregunta del usuario
 with textcontainer:
+    #Formulario del text input
     with st.form(key='my_form', clear_on_submit=True):
         query = st.text_area("Tu:", key='input', height=100)
         submit_button = st.form_submit_button(label='Enviar')
 
     if query:
         with st.spinner("escribiendo..."):
+
+            #cosine similarity with API Word Embeddings
             docs = embeddings_pdf.similarity_search(query)
-            llm = OpenAI(model_name="gpt-3.5-turbo-1106")
+
+            #respuesta: 4 posibles respuestas
+
+            llm = OpenAI(model_name="text-davinci-003")
             chain = load_qa_chain(llm, chain_type="stuff")
+
 
             with get_openai_callback() as cb:
                 response = chain.run(input_documents=docs, question=query)
@@ -90,13 +113,11 @@ with textcontainer:
         st.session_state.requests.append(query)
         st.session_state.responses.append(response)
 
+
+##Configurando el campo response_container para pintar el historial del chat
 with response_container:
     if st.session_state['responses']:
         for i in range(len(st.session_state['responses'])):
-            message(st.session_state['responses'][i], key=str(i), avatar_style="pixel-art")
+            message(st.session_state['responses'][i],key=str(i), avatar_style="pixel-art")
             if i < len(st.session_state['requests']):
                 message(st.session_state["requests"][i], is_user=True, key=str(i)+'_user')
-
-# Mostrar elementos a cotizar en la interfaz
-if pdf_doc is not None:
-    st.write(f"Elementos a cotizar: {', '.join(items_to_quote)}")
